@@ -1,0 +1,42 @@
+---
+title: "Single Cell Analysis"
+author: "Helen Miller"
+date: "2/28/2020"
+output: html_document
+---
+
+```{r load_libraries}
+library(SingleCellExperiment)
+```
+
+## Make some fake data for assays slot
+Three cells worth of count data across 10 genes
+
+```{r make_data}
+counts_matrix <- data.frame(cell_1 = rpois(10, 10), 
+                    cell_2 = rpois(10, 10), 
+                    cell_3 = rpois(10, 30))
+rownames(counts_matrix) <- paste0("gene_", 1:10)
+counts_matrix <- as.matrix(counts_matrix) # must be a matrix object!
+sce <- SingleCellExperiment(assays = list(counts = counts_matrix))
+assay(sce, "counts")
+counts(sce)
+```
+
+
+## Extending the assays slot
+You can have more than one represntation of the data, eg raw and normalized counts
+
+```{r add_assays}
+sce <- computeSumFactors(sce)
+sce <- scater::logNormCounts(sce)
+sce
+assays(sce)
+logcounts(sce)
+
+## Add custom version of data
+counts_100 <- assay(sce, "counts") + 100
+assay(sce, "counts_100") <- counts_100 # assign a new entry to assays slot
+assays(sce)
+assay(sce, "counts_100")
+```
