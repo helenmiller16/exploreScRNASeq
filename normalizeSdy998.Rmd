@@ -1,0 +1,112 @@
+---
+title: "Process sdy998 data"
+author: "Helen Miller"
+date: "4/15/2020"
+output: html_document
+---
+
+# Prepare data for analysis
+
+```{r setup}
+# load libraries
+suppressPackageStartupMessages({
+  library(scater)
+  library(SingleCellExperiment)
+})
+
+# load qc'd data
+sce <- readRDS("data/sceQC.rds")
+```
+
+# Correct for technical differences between libraries (Normalize)
+https://osca.bioconductor.org/normalization.html
+
+
+## Library size normalization
+
+Divide all counts for each cell by a cell-specific size factor. Assumes that all genes within a cell are affected equally. 
+
+Library size is the total sum of counts across all genes for each cell. Library size factor is library size, normalized so that mean size factor across all cells is 1. 
+
+## Get library size factors
+
+```{r}
+libsize <- librarySizeFactors(sce)
+summary(libsize)
+hist(libsize)
+hist(log10(libsize))
+```
+
+Note: This normalization technique assumes that each cell has a similar total number of transcripts, ie upregulation of one set of genes means balanced downregulation of a different set of genes. When this is not the case, you will get composition bias and innacurate normalization values. This may not be an issue for exploratory analysis because you will still get the same clusters, just with inaccurate distances between clusters. Options to correct for composition bias include [normalization by convolution](https://osca.bioconductor.org/normalization.html#normalization-by-deconvolution), and [spike-in normalization](https://osca.bioconductor.org/normalization.html#spike-norm). 
+
+## Scale values
+
+Scale by size factor, then log-transform values.
+
+
+```{r}
+library(scran)
+set.seed(1000)
+clusters <- quickCluster(sce)
+table(clusters)
+sce <- computeSumFactors(sce, cluster=clusters)
+sce <- logNormCounts(sce)
+assayNames(sce)
+```
+
+# Feature Selection
+
+Select genes that contain biological information and remove genes that contain random noise
+
+
+## Quantifying per-gene variation
+https://osca.bioconductor.org/feature-selection.html#quantifying-per-gene-variation
+
+### Option 1: By variance of expression across cells
+fit a trend to the variance with respect to abundance across all genes. This trend represents the technical noise. 
+
+```{r}
+dec <- modelGeneVar(sce)
+```
+
+```{r per-gene var}
+dec
+fit <- metadata(dec)
+plot(fit$mean, fit$var, xlab="Mean of log-expression",
+    ylab="Variance of log-expression")
+curve(fit$trend(x), col="dodgerblue", add=TRUE, lwd=2)
+dec[order(dec$bio, decreasing=TRUE),] 
+```
+
+### Option 2: by coefficient of variance squared (CV^2)
+
+This gives us an error.......
+
+Suggestion is to use variance of log counts
+
+```{r cv2, eval=FALSE}
+cv <- modelGeneCV2(sce)
+```
+
+## Quantify technical noise
+Separate biological noise from technical noise
+
+You can use spike-ins but I don't think we have spike-in data for some reason? The other option is to model gene variation based on a poisson distribution.
+
+```{r}
+set.seed(0010101)
+dec.pois <- modelGeneVarByPoisson(sce, block = sce$disease)
+dec.pois[order(dec.pois$bio, decreasing=TRUE),]
+```
+
+## Selecting highly-variable genes (HVG)
+https://osca.bioconductor.org/feature-selection.html#hvg-selection
+
+```{r}
+chosenGenes <- getTopHVGs(dec, prop=0.1)
+str(chosenGenes)
+sce.hvg <- sce[chosenGenes,]
+sce.hvg
+saveRDS(sce.hvg, "data/sceHVG.rds")
+```
+
