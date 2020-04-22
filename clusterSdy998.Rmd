@@ -1,0 +1,81 @@
+---
+title: "Cluster Analysis for SDY998 data"
+author: "Helen Miller"
+date: "4/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+suppressPackageStartupMessages({
+  library(SingleCellExperiment)
+  library(scran)
+  library(scater)
+})
+
+sce <- readRDS("data/scePrepped.rds")
+```
+
+
+Now that highly variable genes have been selected and we've performed dimension reduction, we can start looking for biological patterns in the data. First we cluster, then detect marker genes which drive differences between clusters, then annotate cell types. 
+
+https://osca.bioconductor.org/clustering.html
+
+### Graph-based clustering
+https://osca.bioconductor.org/clustering.html#clustering-graph
+
+```{r snngraph}
+g <- buildSNNGraph(sce, k=15, use.dimred = 'PCA')
+clust <- igraph::cluster_walktrap(g)$membership
+table(clust)
+sce$label <- factor(clust)
+plotReducedDim(sce, "TSNE", colour_by="label")
+plotReducedDim(sce, "UMAP", colour_by="label")
+
+saveRDS(sce, "data/sceClustered.rds")
+```
+
+
+### Marker gene detection
+https://osca.bioconductor.org/marker-detection.html
+
+#### Using pairwise t-test
+
+```{r markers}
+markers <- findMarkers(sce, groups = sce$label)
+markers_type <- findMarkers(sce, groups = sce$type)
+names(markers[[1]])
+markers[[1]][1:10,1:4]
+```
+
+```{r plotMarkers, fig.height=15, fig.width=8}
+# Get the top 6 genes from each comparison that distinguishes the first cluster
+best <- markers[[1]][markers[[1]]$Top <= 6,]
+logFCs <- best[, 4:ncol(best)]
+library(pheatmap)
+pheatmap(logFCs, breaks=seq(-5, 5, length.out=101))
+```
+
+```{r somemarkers}
+# Only include markers that are differentially expressed between this and ALL other clusters
+markers.up3 <- findMarkers(sce, pval.type="all", direction="up", groups = sce$label)
+markers.up3[[1]][1:10,1:3]
+
+markers.up4 <- findMarkers(sce, pval.type="some", direction="up", groups = sce$label)
+markers.up4[[1]][1:10,1:3]
+```
+
+#### Using WMW test
+
+Try Wilcoxon-Mann-Whitney test. This method uses AUC, so it compares the distribution of expression between groups. it is symmetric with respect to the size of the clusters being compared, unlike t-tests, which will favor genes with higher relative variance in larger groups.
+
+```{r wmw, fig.height=10, fig.width=8}
+markers.wmw <- findMarkers(sce, test="wilcox", direction="up", groups = sce$label)
+markers.wmw[[1]][1:10,1:4]
+best <- markers.wmw[[1]][markers.wmw[[1]]$Top <= 5,]
+AUCs <- best[,4:ncol(best)]
+pheatmap(AUCs, breaks=seq(0, 1, length.out=21),
+    color=viridis::viridis(21))
+```
+
+

@@ -93,7 +93,7 @@ Separate biological noise from technical noise
 
 You can use spike-ins but I don't think we have spike-in data for some reason? The other option is to model gene variation based on a poisson distribution.
 
-```{r}
+```{r, eval = FALSE}
 set.seed(0010101)
 dec.pois <- modelGeneVarByPoisson(sce, block = sce$disease)
 dec.pois[order(dec.pois$bio, decreasing=TRUE),]
@@ -101,6 +101,8 @@ dec.pois[order(dec.pois$bio, decreasing=TRUE),]
 
 ## Selecting highly-variable genes (HVG)
 https://osca.bioconductor.org/feature-selection.html#hvg-selection
+
+This gives us the top 10% of highly variable genes
 
 ```{r}
 chosenGenes <- getTopHVGs(dec, prop=0.1)
@@ -110,3 +112,68 @@ sce.hvg
 saveRDS(sce.hvg, "data/sceHVG.rds")
 ```
 
+# Dimension reduction
+
+```{r}
+sce <- readRDS("data/sceHVG.rds")
+```
+
+```{r pca}
+sce <- runPCA(sce)
+reducedDims(sce)
+dim(reducedDim(sce, "PCA"))
+```
+
+
+#### Determine the number of PCs to use for downstream analysis
+Find elbow point to decide on the number of PCs to keep for downstream analysis
+
+```{r choose pcs}
+
+# By elbow point
+percentVar <- attr(reducedDim(sce), "percentVar")
+elbow <- PCAtools::findElbowPoint(percentVar)
+elbow
+plot(percentVar, xlab="PC", ylab="Variance explained (%)")
+abline(v = elbow, col="red")
+
+# Using technical noise
+set.seed(111001001)
+denoised <- denoisePCA(sce, technical=dec)
+ncol(reducedDim(denoised))
+
+```
+
+#### Visualization
+
+```{r viz PCA}
+plotReducedDim(sce, dimred="PCA", colour_by="type")
+plotReducedDim(sce, dimred="PCA", ncomponents=4,
+    colour_by="type")
+```
+
+```{r tsne}
+set.seed(00101001101)
+
+# runTSNE() stores the t-SNE coordinates in the reducedDims
+# for re-use across multiple plotReducedDim() calls.
+sce <- runTSNE(sce, dimred="PCA")
+plotReducedDim(sce, dimred="TSNE", colour_by="type")
+```
+
+```{r umap}
+set.seed(1100101001)
+sce <- runUMAP(sce, dimred="PCA")
+plotReducedDim(sce, dimred="UMAP", colour_by="type")
+reducedDims(sce)
+saveRDS(sce, "data/scePrepped.rds")
+```
+
+Color points by other factors
+
+```{r annotate}
+plotReducedDim(sce, dimred = "TSNE", colour_by="sample")
+plotReducedDim(sce, dimred = "TSNE", colour_by="plate")
+plotReducedDim(sce, dimred = "TSNE", colour_by="disease")
+plotReducedDim(sce, dimred = "TSNE", colour_by="molecules")
+```
